@@ -13,23 +13,33 @@ import collections
 import tensorflow as tf
 
 
-data = lm.loadmat('./data/simple_circle_data_background_nodal')
+data = lm.loadmat('./data/most_simple_model')
 
-img = data['img']
-fwd_model = img['fwd_model']
-impeds = data['impeds']
+imdl = data['imdl']
+fwd_model = imdl['fwd_model']
+FC_true = data['FC']
 
 p = fwd_model_parameters(fwd_model)
 d0 = p['n_dims'] + 0
 d1 = p['n_dims'] + 1
 e = p['n_elem']
-(p['NODE'][p['ELEM'][100]])
+(p['NODE'][p['ELEM'][10]])
 FF1, FF2, CC1, CC2 = system_mat_fields(fwd_model)
 
 
-# sv = tf.Variable(sparse)
+FF = tf.sparse_add(FF1, FF2)
+CC = tf.sparse_add(CC1, CC2)
+
 init = tf.initialize_all_tables()
 sess = tf.Session()
-sparse =
+sparse = tf.matmul(tf.sparse_tensor_to_dense(FF, validate_indices=False),
+                   tf.sparse_tensor_to_dense(CC, validate_indices=False),
+                   a_is_sparse=True,
+                   b_is_sparse=True)
 sess.run(init)
-dfc = sess.run( tf.sparse_tensor_to_dense(sparse))
+dfc = sess.run(sparse)
+true_value = np.hstack((np.array([[0.0,-1.0,1.0,0.0], [-2.0,1.0,1.0,0.0]]), np.zeros([2,37])))/2.0
+
+
+assert (np.max(np.abs(dfc[0:2, :] - true_value))< 1.0e-14)
+assert(np.max(np.abs(dfc - FC_true)) < 1e-7)

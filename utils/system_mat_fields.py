@@ -64,8 +64,8 @@ def find_electrode_bdy(bdy, vtx, elec_nodes):
             ff = np.where(np.any(bdy == point[i], axis=1))
             this_area = 0
             for ffp in ff:
-                xyz = vtx[bdy[ffp, :], :]
-                this_area = this_area + tria_area[xyz]
+                xyz = vtx[bdy[ffp, :]-1, :]
+                this_area = this_area + tria_area(xyz)
             bdy_area[0, i] = bdy_area[i] + this_area / dims;
     else:
         print('can`t model this electrode, with {} CEM and {} point'.format(l_bdy_idx, l_point))
@@ -175,14 +175,22 @@ def system_mat_fields(fwd_model):
 
     FF1_idx = np.vstack((FFiidx.flatten('F'), FFjidx.flatten('F'))).astype('int') - 1
     CC1_idx = np.vstack((np.arange(1, d1 * e + 1), p['ELEM'].flatten())).astype('int') - 1
-
-    print(C2iidx.shape)
+    print(C2data.shape[0])
+    nn_elc = C2data.shape[0]
+    
+    FF_shape =[ffs +nn_elc for ffs in FF_shape]
+    CC_shape =[ccs +nn_elc for ccs in CC_shape]
     F2_idx = np.vstack((F2iidx.flatten('F'), F2jidx.flatten('F'))).astype('int') - 1
     C2_idx = np.vstack((C2iidx.flatten('F'), C2jidx.flatten('F'))).astype('int') - 1
-
+    
+    FFdata = FFdata.astype(np.float32)
+    CCdata = CCdata.astype(np.float32)
+    F2data = F2data.astype(np.float32)
+    C2data = C2data.astype(np.float32)
+    
     FF1 = tf.SparseTensor(FF1_idx.T, FFdata.flatten('F'), dense_shape=FF_shape)
     CC1 = tf.SparseTensor(CC1_idx.T, CCdata.flatten('F'), dense_shape=CC_shape)
-    print(C2data.shape)
+    
     FF2 = tf.SparseTensor(F2_idx.T, F2data.flatten('F'), dense_shape=FF_shape)
     CC2 = tf.SparseTensor(C2_idx.T, C2data.flatten('F'), dense_shape=CC_shape)
 
