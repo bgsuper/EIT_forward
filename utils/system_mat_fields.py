@@ -193,5 +193,14 @@ def system_mat_fields(fwd_model):
     
     FF2 = tf.SparseTensor(F2_idx.T, F2data.flatten('F'), dense_shape=FF_shape)
     CC2 = tf.SparseTensor(C2_idx.T, C2data.flatten('F'), dense_shape=CC_shape)
+    FF = tf.sparse_add(FF1, FF2)
+    CC = tf.sparse_add(CC1, CC2)
 
-    return FF1, FF2, CC1, CC2
+    FC = tf.sparse_matmul(tf.sparse_tensor_to_dense(FF, validate_indices=False),
+                       tf.sparse_tensor_to_dense(CC, validate_indices=False),
+                       a_is_sparse=True,
+                       b_is_sparse=True)
+
+
+
+    return FC, FF1, FF2, CC1, CC2
