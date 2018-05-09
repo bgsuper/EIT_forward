@@ -56,7 +56,7 @@ def find_electrode_bdy(bdy, vtx, elec_nodes):
         bdy_area = np.zeros((1, l_bdy_idx))
         for i in range(l_bdy_idx):
             bdy_nodes = bdy[bdy_idx[0][i], :]
-            bdy_area[0, i] = tria_area(vtx[bdy_nodes, :])
+            bdy_area[0, i] = tria_area(vtx[bdy_nodes-1, :])
     elif l_bdy_idx == 0 and l_point > 0:
         dims = bdy.shape[1]
         bdy_area = np.zeros((1, l_point))
@@ -69,6 +69,7 @@ def find_electrode_bdy(bdy, vtx, elec_nodes):
             bdy_area[0, i] = bdy_area[i] + this_area / dims;
     else:
         print('can`t model this electrode, with {} CEM and {} point'.format(l_bdy_idx, l_point))
+
     return bdy_idx, bdy_area
 
 
@@ -131,8 +132,8 @@ def compl_elec_mdl(fwd_model, pp):
         bdy_idx, bdy_area = find_electrode_bdy(pp['boundary'], pp['NODE'], eleci.nodes)
         if not bdy_idx:
             continue
-        i_cem += 1
 
+        i_cem += 1
         for j in range(bdy_idx[0].shape[0]):
             bdy_nds = pp['boundary'][bdy_idx[0][j], :]
             FFdata = np.vstack((FFdata, FFd_block * np.sqrt(bdy_area[0][j] / zc)))
@@ -140,11 +141,10 @@ def compl_elec_mdl(fwd_model, pp):
             FFjidx = np.vstack((FFjidx, FFi_block + cidx))
 
             CCiidx = np.vstack((CCiidx, FFi_block[0:2, :] + cidx))
-            CCjidx = np.vstack((CCjidx, bdy_nds, (pp['n_node'] + i_cem) * np.ones((1, d0))))
+            CCjidx = np.vstack((CCjidx, bdy_nds-1, (pp['n_node'] + i_cem) * np.ones((1, d0))-1))
             CCdata = np.vstack((CCdata, np.array([1, -1]).reshape(2, 1) * np.ones((1, d0))))
             sidx = sidx + d0
             cidx = cidx + d0
-
     return FFdata, FFiidx, FFjidx, CCdata, CCiidx, CCjidx
 
 
@@ -155,6 +155,7 @@ def system_mat_fields(fwd_model):
     d1 = p['n_dims'] + 1
     e = p['n_elem']
     n = p['n_node']
+    num_elc = p['n_elec']
     FF_shape = [d0 * e, d1 * e]
     CC_shape = [d1 * e, n]
 
@@ -175,13 +176,15 @@ def system_mat_fields(fwd_model):
 
     FF1_idx = np.vstack((FFiidx.flatten('F'), FFjidx.flatten('F'))).astype('int') - 1
     CC1_idx = np.vstack((np.arange(1, d1 * e + 1), p['ELEM'].flatten())).astype('int') - 1
-    print(C2data.shape[0])
+
     nn_elc = C2data.shape[0]
     
     FF_shape =[ffs +nn_elc for ffs in FF_shape]
-    CC_shape =[ccs +nn_elc for ccs in CC_shape]
-    F2_idx = np.vstack((F2iidx.flatten('F'), F2jidx.flatten('F'))).astype('int') - 1
-    C2_idx = np.vstack((C2iidx.flatten('F'), C2jidx.flatten('F'))).astype('int') - 1
+    if (C2jidx.shape[0]>0 and C2iidx.shape[0]>0):
+        CC_shape =[np.max(C2iidx).astype('int')+1,  np.max(C2jidx).astype('int')+1]
+
+    F2_idx = np.vstack((F2iidx.flatten('F'), F2jidx.flatten('F'))).astype('int')
+    C2_idx = np.vstack((C2iidx.flatten('F'), C2jidx.flatten('F'))).astype('int')
     
     FFdata = FFdata.astype(np.float32)
     CCdata = CCdata.astype(np.float32)
