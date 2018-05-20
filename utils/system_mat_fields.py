@@ -5,6 +5,7 @@ import time
 from scipy.special import binom, comb
 import scipy.sparse.linalg as lig
 from scipy.linalg import sqrtm
+from scipy import sparse
 from numpy.linalg import inv, det
 import matplotlib.pylab as plt
 import collections
@@ -93,6 +94,51 @@ def tria_area(bdy_pts):
     d = bdy_pts.shape[0]
     area = np.sqrt(np.sum(vectors ** 2) / (d - 1))
     return area
+
+
+# ToDo: TEST!
+def calculate_N2E_QQ(fwd_model, bdy, n_elec, n, p):
+    stim = fwd_model['stimulation']
+
+    cem_electrodes=0
+    N2E = sparse.coo_matrix((n_elec, n+n_elec), dtype=np.float32).tolil()
+    QQ = sparse.coo_matrix((n+n_elec, p), dtype=np.float32).tolil()
+
+    for i in range(n_elec):
+        try:
+            elec_nodes =fwd_model['electrode'][i]['nodes']
+        except:
+            print('Warning: electrode {} has no nodes'.format(i))
+
+        if len(elec_nodes)==1: # point electrode
+            N2E[i, elec_nodes]=1
+        elif len(elec_nodes)<1:
+            raise ValueError('fwd_model_parameters:electrode','zero length electrode specified')
+        else:
+            bdy_idx = find_electrode_bdy(bdy, [], elec_nodes)
+
+            if bdy_idx: # CEM electrode
+                cem_electrodes += 1
+                N2E[i, n+cem_electrodes]=1
+            else:
+                [bdy_idx, srf_area] = find_electrode_bdy(bdy,
+                                                         fwd_model['nodes'],
+                                                         elec_nodes)
+                N2E[i, elec_nodes]=srf_area/sum(srf_area)
+
+    N2E=N2E[:, :(n+cem_electrodes)]
+    QQ = QQ[:(n+cem_electrodes),:]
+
+    for i in range(p):
+        src = 0
+        try:
+            src+=N2E.transpose()*stim[i]['stim_pattern']
+        except:
+            pass
+
+        QQ[:, i] = src
+    return N2E, QQ
+
 
 # DONE
 def fwd_model_parameters(fwd_model):
@@ -203,7 +249,6 @@ def system_mat_fields(fwd_model):
                        tf.sparse_tensor_to_dense(CC, validate_indices=False),
                        a_is_sparse=True,
                        b_is_sparse=True)
-
 
 
     return FC, FF1, FF2, CC1, CC2
