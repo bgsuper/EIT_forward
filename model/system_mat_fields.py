@@ -1,13 +1,7 @@
-import utils.load_mat_customized as lm
 import numpy as np
-from itertools import permutations
-import time
-from scipy.special import binom, comb
-import scipy.sparse.linalg as lig
 from scipy.linalg import sqrtm
 from scipy import sparse
 from numpy.linalg import inv, det
-import matplotlib.pylab as plt
 import collections
 import tensorflow as tf
 
@@ -49,6 +43,11 @@ def sortrows(srf_local):
 
 # DONE
 def find_electrode_bdy(bdy, vtx, elec_nodes):
+
+    if len(vtx)==0:
+        bdy_idx, point = find_bdy_idx(bdy, elec_nodes)
+        return bdy_idx, None
+
     bdy_idx, point = find_bdy_idx(bdy, elec_nodes)
     l_bdy_idx = len(bdy_idx[0])
     l_point = len(point)
@@ -96,7 +95,7 @@ def tria_area(bdy_pts):
     return area
 
 
-# ToDo: TEST!
+# Done!
 def calculate_N2E_QQ(fwd_model, bdy, n_elec, n, p):
     stim = fwd_model['stimulation']
 
@@ -106,7 +105,7 @@ def calculate_N2E_QQ(fwd_model, bdy, n_elec, n, p):
 
     for i in range(n_elec):
         try:
-            elec_nodes =fwd_model['electrode'][i]['nodes']
+            elec_nodes =fwd_model['electrode'][i].nodes
         except:
             print('Warning: electrode {} has no nodes'.format(i))
 
@@ -119,7 +118,7 @@ def calculate_N2E_QQ(fwd_model, bdy, n_elec, n, p):
 
             if bdy_idx: # CEM electrode
                 cem_electrodes += 1
-                N2E[i, n+cem_electrodes]=1
+                N2E[i, n+cem_electrodes-1]=1
             else:
                 [bdy_idx, srf_area] = find_electrode_bdy(bdy,
                                                          fwd_model['nodes'],
@@ -132,7 +131,7 @@ def calculate_N2E_QQ(fwd_model, bdy, n_elec, n, p):
     for i in range(p):
         src = 0
         try:
-            src+=N2E.transpose()*stim[i]['stim_pattern']
+            src+=N2E.transpose()*stim[i].stim_pattern
         except:
             pass
 
@@ -143,21 +142,23 @@ def calculate_N2E_QQ(fwd_model, bdy, n_elec, n, p):
 # DONE
 def fwd_model_parameters(fwd_model):
     param = collections.defaultdict()
-    param['NODE'] = fwd_model['nodes']
-    param['ELEM'] = fwd_model['elems']
+    param['nodes'] = fwd_model['nodes']
+    param['elems'] = fwd_model['elems']
     param['boundary'] = fwd_model['boundary']
-    param['n_node'] = param['NODE'].shape[0]
-    param['n_dims'] = param['NODE'].shape[1]
+    param['n_node'] = param['nodes'].shape[0]
+    param['n_dims'] = param['nodes'].shape[1]
     param['n_elec'] = len(fwd_model['electrode'])
-    param['n_elem'] = param['ELEM'].shape[0]
+    param['n_elem'] = param['elems'].shape[0]
     param['n_stim'] = fwd_model['stimulation'].shape[0]
-    #     param.NODE = fwd_model['nodes']
-    #     param.NODE = fwd_model['nodes']
+    param['N2E'], param['QQ'] = calculate_N2E_QQ(fwd_model, fwd_model['boundary'],
+                                                 len(fwd_model['electrode']),
+                                                 fwd_model['nodes'].shape[0],
+                                                 fwd_model['stimulation'].shape[0])
 
     return param
 
 
-def compl_elec_mdl(fwd_model, pp):
+def compl_elec_mdl(fwd_model, pp, elec_imped=False):
     d0 = pp['n_dims']
     FFdata = np.zeros((0, d0))
     FFd_block = sqrtm((np.ones(d0) + np.eye(d0)) / 6 / (d0 - 1))
@@ -174,8 +175,11 @@ def compl_elec_mdl(fwd_model, pp):
 
     for i in range(pp['n_elec']):
         eleci = fwd_model['electrode'][i]
-        zc = eleci.z_contact
-        bdy_idx, bdy_area = find_electrode_bdy(pp['boundary'], pp['NODE'], eleci.nodes)
+        if elec_imped:
+            zc = eleci.z_contact
+        else:
+            zc = 1.0
+        bdy_idx, bdy_area = find_electrode_bdy(pp['boundary'], pp['nodes'], eleci.nodes)
         if not bdy_idx:
             continue
 
@@ -194,8 +198,8 @@ def compl_elec_mdl(fwd_model, pp):
     return FFdata, FFiidx, FFjidx, CCdata, CCiidx, CCjidx
 
 
-# Partially Done! need to check numercial precise!!!
-def system_mat_fields(fwd_model):
+# Done!!!
+def system_mat_fields(fwd_model, elec_imped=False):
     p = fwd_model_parameters(fwd_model)
     d0 = p['n_dims'] + 0
     d1 = p['n_dims'] + 1
@@ -212,16 +216,16 @@ def system_mat_fields(fwd_model):
     dfact = (d0 - 1) * d0
 
     for j in range(1, e + 1):
-        a = inv(np.hstack((np.ones((d1, 1)), (p['NODE'][p['ELEM'][j - 1] - 1]))))
+        a = inv(np.hstack((np.ones((d1, 1)), (p['nodes'][p['elems'][j - 1] - 1]))))
         idx = np.arange(d0 * (j - 1) + 1, d0 * j + 1)
         FFdata[np.array(idx - 1), 0:d1] = a[np.arange(1, d1), :] / np.sqrt(dfact * np.abs(det(a)))
 
     CCdata = np.ones((d1 * e, 1))
 
-    [F2data, F2iidx, F2jidx, C2data, C2iidx, C2jidx] = compl_elec_mdl(fwd_model, p)
+    [F2data, F2iidx, F2jidx, C2data, C2iidx, C2jidx] = compl_elec_mdl(fwd_model, p, elec_imped)
 
     FF1_idx = np.vstack((FFiidx.flatten('F'), FFjidx.flatten('F'))).astype('int') - 1
-    CC1_idx = np.vstack((np.arange(1, d1 * e + 1), p['ELEM'].flatten())).astype('int') - 1
+    CC1_idx = np.vstack((np.arange(1, d1 * e + 1), p['elems'].flatten())).astype('int') - 1
 
     nn_elc = C2data.shape[0]
     
